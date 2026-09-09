@@ -35,6 +35,10 @@
 
 ## 接線
 
+![NFC 打卡鐘管理介面](https://github.com/shihkefa/BC7215_ESP32C3_ESPhome/blob/main/BC7215A.png?raw=true)
+
+
+
 先斷電再接線，C3 與所有模組共地。本設定以 3.3V 供應兩個模組。
 
 ### BC7215A
