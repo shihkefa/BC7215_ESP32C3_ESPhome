@@ -1,0 +1,351 @@
+#include "bc7215ac.h"
+
+BC7215AC::BC7215AC(BC7215& bc7215Chip)
+    : bc7215(bc7215Chip)
+{
+    bc7215.setTx();
+    initOK = false;
+	useFahrenheit = false;
+}
+
+void BC7215AC::setFahrenheit()
+{
+	if (!useFahrenheit)		// if temp unit changed, reset init. state.
+	{
+		initOK = false;
+	}
+	useFahrenheit = true;
+}
+
+void BC7215AC::setCelsius()
+{
+	if (useFahrenheit)
+	{
+		initOK = false;
+	}
+	useFahrenheit = false;
+}
+
+void BC7215AC::startCapture()
+{
+    receiving = true;
+    expectedCount = 0; // Pairing/learning retain idle-delimited capture.
+	sampleCount = 0;
+    capture_overflow = false;
+    isCapturing = false;
+    bc7215.setRx();
+    delay(50);
+    bc7215.setRxMode(1);
+    bc7215.clrData();
+    bc7215.clrFormat();
+}
+
+void BC7215AC::resumeCapture()
+{
+    if (!receiving) { startCapture(); return; }
+    sampleCount = 0;
+    capture_overflow = false;
+    isCapturing = false;
+}
+
+void BC7215AC::setCaptureProfile(uint8_t count, const bc7215DataMaxPkt_t* data,
+                                const uint8_t* status)
+{
+    expectedCount = count <= 4 ? count : 0;
+    for (unsigned i=0; i<expectedCount; i++) {
+        expectedBits[i] = data[i].bitLen;
+        expectedStatus[i] = status[i] & 0x3f;
+    }
+}
+
+void BC7215AC::stopCapture()
+{
+    receiving = false;
+    bc7215.setTx();
+    delay(50);
+}
+
+bool BC7215AC::signalCaptured()
+{
+    if (bc7215.formatReady())
+    {
+        // In paired receive mode, search a bounded rolling window for the full
+        // learned shape. Never grow the buffer or pass a truncated prefix on.
+        if (expectedCount && sampleCount == 4) {
+            for (unsigned i=1; i<4; i++) {
+                sampleData[i-1] = sampleData[i];
+                sampleFormat[i-1] = sampleFormat[i];
+                sampleStatus[i-1] = sampleStatus[i];
+            }
+            sampleCount = 3;
+            capture_overflow = true;
+        }
+		if (sampleCount < 4)
+		{
+        	bc7215.getFormat(sampleFormat[sampleCount]);
+        	sampleStatus[sampleCount] = bc7215.getData(sampleData[sampleCount]);
+			sampleCount++;
+        } else {
+            capture_overflow = true;
+            bc7215.clrData();
+            bc7215.clrFormat();
+        }
+		isCapturing = true;
+    		timerStartTime = millis();
+        if (expectedCount && sampleCount >= expectedCount) {
+            const unsigned first = sampleCount - expectedCount;
+            bool matches = true;
+            for (unsigned i=0; i<expectedCount; i++) {
+                const unsigned n=first+i;
+                if (sampleStatus[n] == 0xff || sampleData[n].bitLen != expectedBits[i] ||
+                    (sampleStatus[n] & 0x3f) != expectedStatus[i]) matches = false;
+            }
+            if (matches) {
+                for (unsigned i=0; i<expectedCount; i++) {
+                    sampleData[i] = sampleData[first+i];
+                    sampleFormat[i] = sampleFormat[first+i];
+                    sampleStatus[i] = sampleStatus[first+i];
+                }
+                sampleCount = expectedCount;
+                capture_overflow = false;
+                isCapturing = false;
+                return true; // Still must pass the selected library parser.
+            }
+        }
+    }
+    else if (bc7215.dataReady())        // if not receiving Format but only data packet, may need to resend resend Rx
+                                        // mode command
+    {
+        bc7215.setRxMode(1);
+        bc7215.clrData();
+        bc7215.clrFormat();
+		timerStartTime = millis();
+    }
+	if (isCapturing)
+	{
+		if(bc7215.isBusy())
+		{
+			timerStartTime = millis();		// if BC7215 is still busy, reset timer
+		}
+		if (millis() - timerStartTime > 200)	// if idle time is more than 200ms
+		{
+			isCapturing = false;
+			return true;
+		}
+	}
+    return false;
+}
+
+void BC7215AC::sendAcCmd(const bc7215DataVarPkt_t* dataPkt)
+{
+    if (dataPkt == nullptr) return;
+    if (dataPkt->bitLen == 0)
+    {
+        bc7215.loadFormat(*(reinterpret_cast<const bc7215CombinedMsg_t*>(dataPkt)->body.msg.fmt));
+        bc7215.irTx(reinterpret_cast<const bc7215CombinedMsg_t*>(dataPkt)->body.msg.datPkt);
+    }
+    else
+    {
+        bc7215.loadFormat(*bc7215_ac_get_base_fmt());
+        bc7215.irTx(dataPkt);
+    }
+}
+
+bool BC7215AC::init()
+{
+	initOK = false;
+    if (sampleCount == 1)
+    {
+		if (useFahrenheit)
+		{
+        	initOK = bc7215_ac_init_f(sampleStatus[0], reinterpret_cast<const bc7215DataVarPkt_t*>(&rcvdMessage[0]));
+		}
+		else
+		{
+        	initOK = bc7215_ac_init(sampleStatus[0], reinterpret_cast<const bc7215DataVarPkt_t*>(&rcvdMessage[0]));
+		}
+    }
+	else if (sampleCount > 1)
+	{
+		for (int j=0; j<sampleCount; j++)
+		{
+        	if (sampleStatus[j] & 0x40)        // if receiving status has "REV" bit set, reverse every byte of data
+        	{
+        	    for (int i = 0; i < (sampleData[j].bitLen + 7) / 8; i++)
+        	    {
+        	        sampleData[j].data[i] = ~sampleData[j].data[i];
+        	    }
+				sampleStatus[j] &= 0xbf;
+        	}
+		}
+		if (useFahrenheit)
+		{
+			initOK = bc7215_ac_init2_f(sampleCount, rcvdMessage, 0);
+		}
+		else
+		{
+			initOK = bc7215_ac_init2(sampleCount, rcvdMessage, 0);
+		}
+	}
+    return initOK;
+}
+
+bool BC7215AC::init(const bc7215DataMaxPkt_t& data, const bc7215FormatPkt_t& format)
+{
+	sampleData[0] = data;
+	sampleFormat[0] = format;
+	sampleStatus[0] = format.signature.inByte;
+	sampleFormat[0].signature.inByte &= 0x3f;
+	if (useFahrenheit)
+	{
+		initOK = bc7215_ac_init_f(sampleStatus[0], reinterpret_cast<const bc7215DataVarPkt_t*>(&rcvdMessage[0]));
+	}
+	else
+	{
+		initOK = bc7215_ac_init(sampleStatus[0], reinterpret_cast<const bc7215DataVarPkt_t*>(&rcvdMessage[0]));
+	}
+	return initOK;
+}
+
+bool BC7215AC::matchNext() 
+{
+	if (initOK)
+	{
+		initOK = bc7215_ac_find_next(); 
+	}
+	return initOK;
+}
+
+uint8_t BC7215AC::cntPredef() { return bc7215_ac_predefined_cnt(); }
+
+const char* BC7215AC::getPredefName(uint8_t index)
+{
+    if (index < bc7215_ac_predefined_cnt())
+    {
+        return bc7215_ac_predefined_name(index);
+    }
+    return NULL;
+}
+
+bool BC7215AC::initPredef(uint8_t index)
+{
+    bool result;
+    initOK = false;
+    if (index < cntPredef())
+    {
+		if (useFahrenheit)
+		{
+			sampleData[0].bitLen = bc7215_ac_predefined_data_f(index)->bitLen;
+			memcpy(sampleData[0].data, bc7215_ac_predefined_data_f(index)->data, (sampleData[0].bitLen+7)/8);
+		}
+		else
+		{
+			sampleData[0].bitLen = bc7215_ac_predefined_data(index)->bitLen;
+			memcpy(sampleData[0].data, bc7215_ac_predefined_data(index)->data, (sampleData[0].bitLen+7)/8);
+		}
+		memcpy(&sampleFormat[0], bc7215_ac_predefined_fmt(index), 33);
+		sampleStatus[0] = sampleFormat[0].signature.inByte;
+		
+       	initOK = init(sampleData[0], sampleFormat[0]);
+    }
+    return initOK;
+}
+
+const bc7215DataVarPkt_t* BC7215AC::setTo(int temp, int mode, int fan, int key)
+{
+    const bc7215DataVarPkt_t* dataPkt;
+    if (initOK)
+    {
+		if (useFahrenheit)
+		{
+        	dataPkt = bc7215_ac_set_f(temp - 60, mode, fan, key);
+		}
+		else
+		{
+        	dataPkt = bc7215_ac_set(temp - 16, mode, fan, key);
+		}
+        sendAcCmd(dataPkt);
+        return dataPkt;
+    }
+    return NULL;
+}
+
+const bc7215DataVarPkt_t* BC7215AC::on()
+{
+    const bc7215DataVarPkt_t* dataPkt;
+    if (initOK)
+    {
+        dataPkt = bc7215_ac_on();
+        if (dataPkt == NULL)
+        {
+            dataPkt = bc7215_ac_get_base_data();
+        }
+        sendAcCmd(dataPkt);
+        return dataPkt;
+    }
+    return NULL;
+}
+
+const bc7215DataVarPkt_t* BC7215AC::off()
+{
+    const bc7215DataVarPkt_t* dataPkt;
+    if (initOK)
+    {
+        dataPkt = bc7215_ac_off();
+        sendAcCmd(dataPkt);
+        return dataPkt;
+    }
+    return NULL;
+}
+
+bool BC7215AC::parse(int& temp, int& mode, int& fan, int& power)
+{
+	int8_t t = -1, m = -1, f = -1, p = -1;
+	bool result = false;
+	if (initOK)
+	{
+    	if (sampleCount == 1)
+    	{
+    	    if (!bc7215_ac_replace_base(sampleStatus[0], reinterpret_cast<const bc7215DataVarPkt_t*>(&sampleData[0]))) return false;
+    	}
+		else if (sampleCount > 1)
+		{
+			for (int j=0; j<sampleCount; j++)
+			{
+    	    	if (sampleStatus[j] & 0x40)        // if receiving status has "REV" bit set, reverse every byte of data
+    	    	{
+    	    	    for (int i = 0; i < (sampleData[j].bitLen + 7) / 8; i++)
+    	    	    {
+    	    	        sampleData[j].data[i] = ~sampleData[j].data[i];
+    	    	    }
+					sampleStatus[j] &= 0xbf;
+    	    	}
+			}
+			if (!bc7215_ac_replace_base(sampleCount, reinterpret_cast<const bc7215DataVarPkt_t*>(rcvdMessage))) return false;
+		}
+		if (useFahrenheit)
+		{
+			result = bc7215_ac_parse_f(&t, &m, &f, &p);
+			temp = t+60;
+		}
+		else
+		{
+			result = bc7215_ac_parse(&t, &m, &f, &p);
+			temp = t+16;
+		}
+		mode = m;
+		fan = f;
+		power = p;
+	}
+	return result;
+}
+
+bool BC7215AC::isBusy() { return bc7215.isBusy(); }
+
+bool BC7215AC::isCelsius() { return !useFahrenheit; }
+
+const bc7215DataVarPkt_t* BC7215AC::getDataPkt() { return bc7215_ac_get_base_data(); }
+
+const bc7215FormatPkt_t* BC7215AC::getFormatPkt() { return bc7215_ac_get_base_fmt(); }
+
+const char* BC7215AC::getLibVer() { return bc7215_ac_get_ver(); }
