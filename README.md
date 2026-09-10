@@ -11,11 +11,11 @@
 | 項目 | 說明 |
 | --- | --- |
 | 原廠離線碼庫 | V8.1 build 2632 |
-| 配對流程 | 沿用 v1.0.7，以原廠遙控器取樣、手動切換候選 |
+| 配對流程 | 以原廠遙控器取樣、手動切換候選 |
 | 空調控制 | 開關、模式、16～30°C、風速；實際效果依冷氣與碼庫支援而定 |
 | 遙控器同步 | 接收並解析原廠遙控器的溫度、模式、風速及電源設定 |
 | 配對資訊 | 候選序號、候選數量、配對資料識別碼、碼庫版本 |
-| 擺風 | 上下／左右分開學習，符合條件時可控制及辨識遙控器狀態 |
+| 擺風 | 上下／左右分開學習，符合條件時可控制及辨識遙控器狀態,但擺風學習不支援所有廠牌 |
 | 溫濕度 | SHT40 室內溫度、濕度獨立感測器 |
 | 板載 RGB | 空調配對時七彩循環，其餘時間關閉 |
 | 更新 | 首次 USB 安裝，後續可透過 ESPHome OTA 更新 |
@@ -35,7 +35,7 @@
 
 ## 接線
 
-![NFC 打卡鐘管理介面](https://github.com/shihkefa/BC7215_ESP32C3_ESPhome/blob/main/BC7215A.png?raw=true)
+![BC7215A](https://github.com/shihkefa/BC7215_ESP32C3_ESPhome/blob/main/BC7215A.png?raw=true)
 
 
 
@@ -86,7 +86,6 @@ UART 設定為 **19200 bps、8N2**：8 資料位元、無同位元檢查、2 停
 專案目錄/
 ├── bc7215a-c3.yaml
 ├── secrets.yaml              # 自行建立，不上傳 GitHub
-├── secrets.example.yaml
 └── components/
     └── bc7215a/
         ├── __init__.py
@@ -138,18 +137,7 @@ substitutions:
 
 操作介面可能隨版本調整，請參閱 [ESPHome 安裝教學](https://esphome.io/install/getting-started/)。
 
-### CLI 安裝方式
 
-安裝 ESPHome 後，在含 YAML 的目錄執行：
-
-```bash
-esphome config bc7215a-c3.yaml
-esphome compile bc7215a-c3.yaml
-esphome upload bc7215a-c3.yaml --device COM3
-esphome logs bc7215a-c3.yaml --device COM3
-```
-
-`COM3` 只是 Windows 範例，請換成實際 C3 串口；Linux 可能是 `/dev/ttyUSB0` 或 `/dev/ttyACM0`。若接線與 USB 埠不明，先確認裝置身分再上傳。
 
 ## 加入 Home Assistant
 
