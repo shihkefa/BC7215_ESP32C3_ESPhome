@@ -8,6 +8,8 @@ ESP32-C3-MINI-1 雙 USB 開發板搭配 BC7215A，提供 ESPHome／Home Assistan
 - **已編譯 BIN**：[Factory／OTA 韌體與校驗碼](firmware/README.md)。新板使用 Factory，已安裝本專案 Matter 韌體時使用 OTA。
 - **使用教學**：下方包含安裝、Wi-Fi 配網、遙控器匹配、HA、Matter、日常控制及完整燈號。
 - **接線圖**：[PNG](接線圖.png)／[SVG](接線圖.svg)。
+- **燒錄說明**：[Factory／OTA 安裝與升級](BIN_燒錄說明.md)。
+- **版本紀錄**：[歷次更新](CHANGES.md)。
 - **版本檢查**：[v1.0.33 驗證紀錄](VALIDATION.md)。
 
 ## 本版變更
@@ -24,7 +26,7 @@ ESP32-C3-MINI-1 雙 USB 開發板搭配 BC7215A，提供 ESPHome／Home Assistan
 
 空調配對格式與儲存鍵、Matter 端點編號維持；不自動清除家庭。Wi-Fi 保存鍵依 ESPHome 設定版本產生，升級若回到 AP，需重新配網。舊獨立擺風資料不再讀取。
 
-重查結果見 [RECHECK_繁體中文.md](RECHECK_繁體中文.md)，測試見 [VALIDATION.md](VALIDATION.md)。本機驗證不能保證所有品牌或長時間實機穩定，對未確認完成的紅外指令仍不自動重送。
+本版驗證與限制見 [VALIDATION.md](VALIDATION.md)。本機驗證不能保證所有品牌或長時間實機穩定，對未確認完成的紅外指令仍不自動重送。
 
 ## 接線
 
@@ -99,7 +101,7 @@ HA 與網頁皆提供「清除 Matter 家庭配對」，會撤銷所有已保存
 
 每台採用獨立 IP、MAC 尾碼名稱及 Matter 配對資料。同一 BIN 可刷不同板子；不要把已配對板子的整份 Flash／NVS 複製給另一台。同一房間相同紅外碼可能控制多台冷氣，應以位置／方向區隔。
 
-將 `secrets.example.yaml` 複製成 `secrets.yaml` 並填入自己的網路，以 ESPHome 2026.8.2 編譯 `bc7215a-c3.yaml`。請使用完整 v1.0.33 資料夾；不要只覆蓋檔案而留下舊的 `bc7215a_swing.cpp`／`bc7215a_swing_sync.cpp`。若共用舊編譯目錄而提示找不到已刪除的來源，請清理編譯快取後重建。修改網頁後執行 `python web/build_assets.py` 更新打包資源。驗證及限制見 [VALIDATION.md](VALIDATION.md)。舊版修正說明只作歷史參考，現行操作以此文件為準。
+將 `secrets.example.yaml` 複製成 `secrets.yaml` 並填入自己的網路，以 ESPHome 2026.8.2 編譯 `bc7215a-c3.yaml`。請使用完整 v1.0.33 資料夾；不要只覆蓋檔案而留下舊的 `bc7215a_swing.cpp`／`bc7215a_swing_sync.cpp`。若共用舊編譯目錄而提示找不到已刪除的來源，請清理編譯快取後重建。修改網頁後執行 `python web/build_assets.py` 更新打包資源。驗證及限制見 [VALIDATION.md](VALIDATION.md)。歷次更新見 [版本紀錄](CHANGES.md)，現行操作以此文件為準。
 
 ## 元件授權
 
