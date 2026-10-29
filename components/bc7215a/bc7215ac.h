@@ -1,7 +1,7 @@
 #ifndef BC7215AC_H
 #define BC7215AC_H
 
-#include <Arduino.h>
+#include "bc7215_compat.h"
 #include "bc7215.h"
 #include "bc7215_ac_lib.h"
 

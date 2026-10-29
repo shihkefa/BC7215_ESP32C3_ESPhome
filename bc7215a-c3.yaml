@@ -1,16 +1,49 @@
 substitutions:
   device_name: bc7215a-c3
   friendly_name: 空調遙控器
-  # 預設接板上的 USB 轉串口端（常標 UART）。
-  # 若接原生 USB 端，改為 USB_SERIAL_JTAG。
-  logger_uart: UART0
+  # 預設從開發板的原生 USB 插孔讀取日誌。
+  # 改接 USB 轉串口端時可設為 UART0。
+  logger_uart: USB_SERIAL_JTAG
   # 依使用者照片比對 YD-ESP32-C3-COREBOARD 原理圖；不同批次請核對。
   rgb_pin: GPIO8
 
 esphome:
   name: ${device_name}
+  name_add_mac_suffix: true
   friendly_name: ${friendly_name}
   min_version: 2026.8.2
+  on_boot:
+    priority: -100
+    then:
+      # The climate restores its state before Matter starts; publish it once
+      # more after all components have completed setup.
+      # This IR controller has a single target, shared by heat/cool/auto.
+      # Normalize the nonvolatile SDK default on upgrades from older firmware.
+      - matter.set_attribute:
+          path: matter_ac.thermostat.control_sequence_of_operation
+          value: 4
+      - matter.set_attribute:
+          path: matter_ac.thermostat.min_setpoint_dead_band
+          value: 0
+      - lambda: id(matter_controller).report_ac_fan(1, id(ac_controller).matter_fan_mode());
+      - matter.set_attribute:
+          path: matter_ac.on_off.on_off
+          value: !lambda return id(ac_controller).matter_system_mode() != 0;
+      - matter.set_attribute:
+          path: matter_ac.thermostat.system_mode
+          value: !lambda return id(ac_controller).matter_system_mode();
+      - matter.set_attribute:
+          path: matter_ac.thermostat.thermostat_running_mode
+          value: !lambda return id(ac_controller).matter_running_mode();
+      - matter.set_attribute:
+          path: matter_ac.thermostat.thermostat_running_state
+          value: !lambda return id(ac_controller).matter_running_state();
+      - matter.set_attribute:
+          path: matter_ac.thermostat.occupied_cooling_setpoint
+          value: !lambda return id(ac_controller).matter_target_temperature_centi();
+      - matter.set_attribute:
+          path: matter_ac.thermostat.occupied_heating_setpoint
+          value: !lambda return id(ac_controller).matter_target_temperature_centi();
   on_shutdown:
     then:
       - light.turn_off: pairing_rgb
@@ -18,14 +51,19 @@ esphome:
 esp32:
   board: esp32-c3-devkitm-1
   flash_size: 4MB
+  toolchain: platformio
   framework:
-    type: arduino
+    type: esp-idf
 
 external_components:
   - source:
       type: local
       path: components
-    components: [bc7215a]
+    components: [bc7215a, bc7215a_web]
+  - source:
+      type: local
+      path: components
+    components: [matter]
 
 logger:
   hardware_uart: ${logger_uart}
@@ -35,24 +73,60 @@ logger:
 api:
   reboot_timeout: 0s
 
+network:
+  enable_ipv6: true
+
+matter:
+  id: matter_controller
+  endpoints:
+    1:
+      id: matter_ac
+      room_air_conditioner:
+        with_features:
+          - heating
+          - cooling
+          - auto_mode
+      clusters:
+        fan_control:
+          with_features: [multi_speed, auto]
+      on_attribute:
+        fan_control.fan_mode:
+          - lambda: id(ac_controller).matter_set_fan_mode(value);
+        on_off.on_off:
+          - lambda: id(ac_controller).matter_set_power(value);
+        thermostat.system_mode:
+          - lambda: id(ac_controller).matter_set_system_mode(value);
+        thermostat.occupied_cooling_setpoint:
+          - lambda: id(ac_controller).matter_set_target_temperature(value);
+        thermostat.occupied_heating_setpoint:
+          - lambda: id(ac_controller).matter_set_target_temperature(value);
+
 ota:
   - platform: esphome
 
 wifi:
+  id: network_wifi
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   power_save_mode: none
   reboot_timeout: 0s
   ap:
-    ssid: BC7215A-Setup
-    password: !secret ap_password
+    # Leave SSID unset: ESPHome uses the MAC-suffixed device name.
+    password: "12345678"
 
 captive_portal:
 
+bc7215a_web:
+
 web_server:
+  include_internal: true  # 三個維護按鈕僅供 Web 使用，不發布到 HA。
   port: 80
   version: 3
-  local: true
+  local: false
+  js_url: ""
+  css_url: ""
+  js_include: web/dashboard.bundle.js
+  css_include: web/dashboard.css
   log: false
 
 i2c:
@@ -82,6 +156,26 @@ climate:
     busy_pin: GPIO1
     temperature_sensor: room_temperature
     humidity_sensor: room_humidity
+    on_state:
+      - lambda: id(matter_controller).report_ac_fan(1, id(ac_controller).matter_fan_mode());
+      - matter.set_attribute:
+          path: matter_ac.on_off.on_off
+          value: !lambda return id(ac_controller).matter_system_mode() != 0;
+      - matter.set_attribute:
+          path: matter_ac.thermostat.system_mode
+          value: !lambda return id(ac_controller).matter_system_mode();
+      - matter.set_attribute:
+          path: matter_ac.thermostat.thermostat_running_mode
+          value: !lambda return id(ac_controller).matter_running_mode();
+      - matter.set_attribute:
+          path: matter_ac.thermostat.thermostat_running_state
+          value: !lambda return id(ac_controller).matter_running_state();
+      - matter.set_attribute:
+          path: matter_ac.thermostat.occupied_cooling_setpoint
+          value: !lambda return id(ac_controller).matter_target_temperature_centi();
+      - matter.set_attribute:
+          path: matter_ac.thermostat.occupied_heating_setpoint
+          value: !lambda return id(ac_controller).matter_target_temperature_centi();
     status:
       name: 運作狀態_Status
     match_info:
@@ -90,12 +184,6 @@ climate:
       name: 配對資料識別碼_PairingID
     library_version:
       name: 碼庫版本_LibraryVersion
-    vertical_swing_status:
-      name: 上下擺風學習狀態_VerticalSwing
-    horizontal_swing_status:
-      name: 左右擺風學習狀態_HorizontalSwing
-    swing_state:
-      name: 擺風狀態_SwingState
     paired:
       name: 已配對_Paired
     state_known:
@@ -111,43 +199,48 @@ light:
     channel_colors: GRB
     restore_mode: ALWAYS_OFF
     default_transition_length: 0s
-    effects:
-      - addressable_rainbow:
-          name: 配對七彩
-          speed: 10
-          width: 50
 
 interval:
   - interval: 100ms
     then:
       - lambda: |-
-          // Read the actual pairing phase, including extra sampling.
-          // Restarting the effect every tick would prevent a smooth cycle.
-          static bool initialized = false;
-          static bool was_pairing = false;
-          const bool pairing = id(ac_controller).is_pairing();
-          if (initialized && pairing == was_pairing) return;
-          initialized = true;
-          was_pairing = pairing;
-          if (pairing) {
-            auto call = id(pairing_rgb).turn_on();
-            call.set_brightness(0.20f);
-            call.set_effect("配對七彩");
-            call.set_transition_length(0);
-            call.perform();
-          } else {
-            auto call = id(pairing_rgb).turn_off();
-            call.set_transition_length(0);
-            call.perform();
-          }
+          using namespace esphome::bc7215a;
+          const auto mode = status_led_mode(id(ac_controller).is_pairing(),
+              id(network_wifi).is_ap_active(), id(network_wifi).is_connected());
+          static auto previous_mode = mode;
+          static uint32_t changed_at = millis();
+          static uint8_t previous_color = 255;
+          if (mode != previous_mode) { previous_mode = mode; changed_at = millis(); }
+          const uint8_t color = status_led_color(mode, millis() - changed_at);
+          if (color == previous_color) return;
+          previous_color = color;
+          auto call = id(pairing_rgb).make_call();
+          call.set_state(color != 0);
+          call.set_rgb((color & 4) ? 1.0f : 0.0f, (color & 2) ? 1.0f : 0.0f, (color & 1) ? 1.0f : 0.0f);
+          call.set_brightness(0.20f);
+          call.set_transition_length(0);
+          call.perform();
 
 button:
   - platform: template
+    name: 清除Matter家庭配對_ClearMatterFabrics
+    entity_category: config
+    icon: mdi:home-remove
+    on_press:
+      - lambda: id(matter_controller).clear_fabrics();
+  - platform: template
+    name: 開啟Matter配對_MatterPair
+    internal: true
+    on_press:
+      - lambda: id(matter_controller).open_commissioning_window();
+  - platform: template
     name: 重整紅外接收_RecoverReception
+    internal: true
     on_press:
       - lambda: id(ac_controller).recover_reception();
   - platform: template
     name: 重新檢查通訊_RetryCommunication
+    internal: true
     on_press:
       - lambda: id(ac_controller).retry_communication();
   - platform: template
@@ -162,22 +255,6 @@ button:
     name: 取消配對_CancelPair
     on_press:
       - lambda: id(ac_controller).cancel_pairing();
-  - platform: template
-    name: 學習上下擺風_LearnVertical
-    on_press:
-      - lambda: id(ac_controller).start_swing_learning(false);
-  - platform: template
-    name: 學習左右擺風_LearnHorizontal
-    on_press:
-      - lambda: id(ac_controller).start_swing_learning(true);
-  - platform: template
-    name: 擷取擺風樣本_CaptureSwing
-    on_press:
-      - lambda: id(ac_controller).arm_swing_sample();
-  - platform: template
-    name: 取消擺風學習_CancelSwing
-    on_press:
-      - lambda: id(ac_controller).cancel_swing_learning();
   - platform: restart
     name: 重新啟動_Restart
 
@@ -196,6 +273,15 @@ sensor:
       id: room_temperature
       name: 室內溫度_Temperature
       accuracy_decimals: 1
+      on_value:
+        then:
+          - matter.set_attribute:
+              path: matter_ac.thermostat.local_temperature
+              # Matter nullable int16 null: do not leave stale readings visible.
+              value: !lambda |-
+                return std::isfinite(x) && x >= -40.0f && x <= 125.0f
+                    ? static_cast<int16_t>(std::lround(x * 100.0f))
+                    : static_cast<int16_t>(-32768);
     humidity:
       id: room_humidity
       name: 室內濕度_Humidity
@@ -208,6 +294,13 @@ sensor:
     name: 運作時間_Uptime
 
 text_sensor:
+  - platform: matter
+    commissioning_status:
+      name: Matter配對狀態_MatterStatus
+    qr_code:
+      name: Matter配對碼
+    manual_pairing_code:
+      name: Matter手動配對碼
   - platform: wifi_info
     ip_address:
       name: IP位址_Address

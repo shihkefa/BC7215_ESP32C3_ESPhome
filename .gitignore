@@ -1,0 +1,11 @@
+secrets.yaml
+.esphome/
+.pio/
+__pycache__/
+*.pyc
+*.bin
+*.elf
+*.log
+
+# Published, verified firmware only
+!firmware/*.bin

@@ -1,6 +1,24 @@
 
 #include "bc7215.h"
 
+namespace {
+// On ESP-IDF, enqueue one complete command and let CTS gate each wire byte.
+// Arduino and host streams retain the original software BUSY handshake.
+struct CommandPacket {
+    Stream &stream;
+    explicit CommandPacket(Stream &s) : stream(s) {
+#ifdef BC7215_HAS_PACKET_STREAM
+        stream.beginPacket();
+#endif
+    }
+    ~CommandPacket() {
+#ifdef BC7215_HAS_PACKET_STREAM
+        stream.endPacket();
+#endif
+    }
+};
+}
+
 BC7215::BC7215(Stream& SerialPort, int ModPin, int BusyPin) : uart(SerialPort), modPin(ModPin), busyPin(BusyPin)
 {
 	pinMode(busyPin, INPUT);
@@ -63,6 +81,7 @@ void BC7215::setRx()
 
 void BC7215::setShutDown()
 {
+    CommandPacket packet(uart);
 	if ((modPin == -2) || ((modPin >= 0) && (digitalRead(modPin) == LOW)))	// if MOD is LOW
 	{
 		sendOneByte(0xf7);
@@ -101,7 +120,7 @@ void BC7215::clrData()
 
 uint16_t BC7215::getLen()
 {
-	statusUpdate();
+	if (!bc7215Status.dataPktReady) statusUpdate();
     if (bc7215Status.dataPktReady)
     {
         return curPktInfo.bitLen;
@@ -114,7 +133,7 @@ uint16_t BC7215::getLen()
 
 uint16_t BC7215::dpketSize()
 {
-	statusUpdate();
+	if (!bc7215Status.dataPktReady) statusUpdate();
     if (bc7215Status.dataPktReady)
     {
         return (curPktInfo.bitLen + 7) / 8 + 2;
@@ -130,7 +149,9 @@ uint8_t BC7215::getData(bc7215DataVarPkt_t* target)
 	uint16_t i;
 	uint16_t rtnBitLen;
     uint8_t status = 0xff;
-	statusUpdate();
+	// getFormat() may already have consumed its ready flag. Do not advance
+	// the UART here and replace the associated data with a later segment.
+	if (!bc7215Status.dataPktReady) statusUpdate();
 	rtnBitLen = 8;
     if (bc7215Status.dataPktReady)
     {
@@ -158,7 +179,7 @@ uint8_t BC7215::getData(bc7215DataMaxPkt_t& target)
 uint16_t BC7215::getRaw(void* addr, uint16_t size)
 {
 	uint16_t i;
-	statusUpdate();
+	if (!bc7215Status.dataPktReady) statusUpdate();
 	if (bc7215Status.dataPktReady)
 	{
 	    bc7215Status.dataPktReady = 0;
@@ -255,6 +276,7 @@ uint8_t BC7215::getFormat(bc7215FormatPkt_t& target)
 
 void BC7215::loadFormat(const bc7215FormatPkt_t& source)
 {
+    CommandPacket packet(uart);
     uint8_t i;
     if ((modPin == -2) || ((modPin >= 0) && (digitalRead(modPin) == LOW)))	// if MOD is LOW (bc7215 is in transmit mode)
     {
@@ -270,6 +292,7 @@ void BC7215::loadFormat(const bc7215FormatPkt_t& source)
 
 void BC7215::irTx(const bc7215DataVarPkt_t* source)
 {
+    CommandPacket packet(uart);
     uint16_t i;
     uint16_t bytes;
     if ((modPin == -2) || ((modPin >= 0) && (digitalRead(modPin) == LOW)))       // check if bc7215 is in trasmitting mode
@@ -297,6 +320,7 @@ void BC7215::irTx(const bc7215DataMaxPkt_t& source)
 
 void BC7215::sendRaw(const void* source, uint16_t size)
 {
+    CommandPacket packet(uart);
     uint16_t i;
     if ((modPin == -2) || ((modPin >= 0) && (digitalRead(modPin) == LOW)))
     {
@@ -489,6 +513,9 @@ void BC7215::byteStuffingSend(uint8_t data)
 void BC7215::sendOneByte(uint8_t data)
 {
     if (io_error) return;
+#ifdef BC7215_HAS_PACKET_STREAM
+    if (uart.packetBuffered()) { uart.write(data); return; }
+#endif
 	if (busyPin != -3)	// if BUSY is connected to arduino
 	{
 		const uint32_t started = millis();
@@ -503,9 +530,13 @@ void BC7215::sendOneByte(uint8_t data)
 
 void BC7215::statusUpdate()
 {
+	// There is only one data/format slot. Preserve a completed combined
+	// message until the caller consumes it; later segments remain in UART.
+	if (bc7215Status.formatPktReady) return;
 	while (uart.available() > 0)
 	{
 		processData(uart.read());
+		if (bc7215Status.formatPktReady) return;
 	}
 }
 

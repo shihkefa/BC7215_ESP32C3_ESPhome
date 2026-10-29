@@ -33,13 +33,10 @@ CONFIG_SCHEMA = cv.All(
         cv.Optional("match_info"): text_sensor.text_sensor_schema(),
         cv.Optional("pairing_id"): text_sensor.text_sensor_schema(),
         cv.Optional("library_version"): text_sensor.text_sensor_schema(),
-        cv.Optional("vertical_swing_status"): text_sensor.text_sensor_schema(),
-        cv.Optional("horizontal_swing_status"): text_sensor.text_sensor_schema(),
-        cv.Optional("swing_state"): text_sensor.text_sensor_schema(),
         cv.Optional("paired"): binary_sensor.binary_sensor_schema(),
         cv.Optional("state_known"): binary_sensor.binary_sensor_schema(),
     }).extend(uart.UART_DEVICE_SCHEMA).extend(cv.COMPONENT_SCHEMA),
-    cv.only_with_arduino, validate_pins,
+    validate_pins,
 )
 
 FINAL_VALIDATE_SCHEMA = cv.All(validate_single, uart.final_validate_device_schema(
@@ -58,8 +55,8 @@ async def to_code(config):
     for name in ("mod_pin", "busy_pin"):
         pin = await cg.gpio_pin_expression(config[name])
         cg.add(getattr(var, "set_" + name)(pin))
-    for name in ("status", "match_info", "pairing_id", "library_version", "vertical_swing_status", "horizontal_swing_status", "swing_state", "paired", "state_known"):
+    for name in ("status", "match_info", "pairing_id", "library_version", "paired", "state_known"):
         if name in config:
-            entity = await (text_sensor.new_text_sensor(config[name]) if name in ("status", "match_info", "pairing_id", "library_version", "vertical_swing_status", "horizontal_swing_status", "swing_state")
+            entity = await (text_sensor.new_text_sensor(config[name]) if name in ("status", "match_info", "pairing_id", "library_version")
                             else binary_sensor.new_binary_sensor(config[name]))
             cg.add(getattr(var, "set_" + name)(entity))

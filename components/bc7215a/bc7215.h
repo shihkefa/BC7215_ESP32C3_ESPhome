@@ -30,8 +30,7 @@
 *     MIT License
 ******************************************************************************/
 
-#include <Arduino.h>
-#include <Stream.h>
+#include "bc7215_compat.h"
 #include "bc7215_types.h"
 
 /**

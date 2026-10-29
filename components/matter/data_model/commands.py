@@ -1,0 +1,200 @@
+from dataclasses import dataclass, field
+
+import esphome.config_validation as cv
+
+from ..util import snake_case
+from .conformance import Conformance
+from .units import UNIT_VALIDATORS
+
+_INTEGER_RANGES = {
+    "int8u": (0, 0xFF),
+    "int16u": (0, 0xFFFF),
+    "int32u": (0, 0xFFFFFFFF),
+    "int64u": (0, 0xFFFFFFFFFFFFFFFF),
+    "int8s": (-0x80, 0x7F),
+    "int16s": (-0x8000, 0x7FFF),
+    "int32s": (-0x80000000, 0x7FFFFFFF),
+    "int64s": (-0x8000000000000000, 0x7FFFFFFFFFFFFFFF),
+    "enum8": (0, 0xFF),
+    "bitmap8": (0, 0xFF),
+    "bitmap16": (0, 0xFFFF),
+    "bitmap32": (0, 0xFFFFFFFF),
+    "bitmap64": (0, 0xFFFFFFFFFFFFFFFF),
+}
+
+_ESP_MATTER_JSON_TYPES = {
+    "int8s": "I8",
+    "int16s": "I16",
+    "int32s": "I32",
+    "int64s": "I64",
+    "int8u": "U8",
+    "int16u": "U16",
+    "int32u": "U32",
+    "int64u": "U64",
+    "enum8": "U8",
+    "enum16": "U16",
+    "bitmap8": "U8",
+    "bitmap16": "U16",
+    "bitmap32": "U32",
+    "bitmap64": "U64",
+    "boolean": "BOOL",
+    "single": "FP",
+    "double": "DFP",
+    "char_string": "STR",
+    "long_char_string": "STR",
+    "octet_string": "BYT",
+    "long_octet_string": "BYT",
+    "struct": "OBJ",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class Field:
+    name: str  # CamelCase
+    type: str
+    id: int
+    optional: bool = False
+    default: int | None = None
+    min: int | None = None
+    max: int | None = None
+    unit: str | None = None
+    multiplier: int | None = None
+    # is_nullable: bool = False
+    # enum_values and bitmap_values keys are snake_case.
+    enum_values: dict[str, int] = field(default_factory=dict)
+    bitmap_masks: dict[str, int] = field(default_factory=dict)
+    struct_items: list[dict] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        # TODO: validate enum and bitmap names to be snake_case
+
+        optional = data.get("optional", False)
+        default = data.get("default")
+        bitmap_masks = data.get("bitmap_masks", {})
+        if bitmap_masks and default is None:
+            default = 0
+        if default is not None:
+            optional = True
+
+        return cls(
+            id=data["id"],
+            name=data["name"],
+            type=data["type"],
+            optional=optional,
+            default=default,
+            min=data.get("min"),
+            max=data.get("max"),
+            unit=data.get("unit"),
+            multiplier=data.get("multiplier"),
+            enum_values=data.get("enum_values", {}),
+            bitmap_masks=bitmap_masks,
+            struct_items=data.get("struct", []),
+        )
+
+    @property
+    def data_key(self) -> str:
+        """Key for esp_matter JSON data."""
+        return f"{self.id}:{_ESP_MATTER_JSON_TYPES[self.type]}"
+
+    @property
+    def schema_key(self) -> str:
+        """Key as used in device config YAML."""
+        conf_key = snake_case(self.name)
+        if not self.optional:
+            return cv.Required(conf_key)
+        if self.default is not None:
+            return cv.Optional(conf_key, default=self.default)
+        else:
+            return cv.Optional(conf_key)
+
+    def _validate_enum(self, value):
+        if isinstance(value, int):
+            return value
+        if not isinstance(value, str):
+            raise cv.Invalid("Expected an enum name or integer")
+        enum_value = self.enum_values.get(value)
+        if enum_value is not None:
+            return enum_value
+        raise cv.Invalid(
+            f"Unknown enum name '{value}'; expected one of: {', '.join(self.enum_values)}"
+        )
+
+    def _validate_bitmap(self, value):
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            try:
+                return self.bitmap_masks[value]
+            except KeyError:
+                raise cv.Invalid(
+                    f"Unknown bitmask name '{value}'; expected one of: {', '.join(self.enum_values)}"
+                )
+        if isinstance(value, list):
+            result = 0
+            for v in value:
+                try:
+                    result += self.bitmap_masks[v]
+                except KeyError:
+                    raise cv.Invalid(
+                        f"Unknown bitmask name '{v}'; expected one of: {', '.join(self.enum_values)}"
+                    )
+            return result
+        raise cv.Invalid("Expected a (list of) bitmask name(s) or integer")
+
+    @property
+    def schema(self):
+        if self.type in _INTEGER_RANGES:
+            type_min, type_max = _INTEGER_RANGES[self.type]
+            validator = cv.int_range(
+                min=max(type_min, self.min) if self.min is not None else type_min,
+                max=min(type_max, self.max) if self.max is not None else type_max,
+            )
+            if self.enum_values:
+                validator = cv.All(self._validate_enum, validator)
+            elif self.bitmap_masks:
+                validator = cv.All(self._validate_bitmap, validator)
+        elif self.type == "boolean":
+            validator = cv.boolean
+        elif self.type in ("single", "double"):
+            validator = cv.float_
+        elif self.type in (
+            "char_string",
+            "long_char_string",
+            "octet_string",
+            "long_octet_string",
+        ):
+            validator = cv.string_strict
+        else:
+            validator = cv.valid
+
+        if self.unit is not None:
+            try:
+                unit_validator = UNIT_VALIDATORS[self.unit]
+            except KeyError as err:
+                raise ValueError(f"Unknown command argument unit: {self.unit}") from err
+            if self.multiplier is not None:
+                validator = cv.All(unit_validator(self.multiplier), validator)
+            else:
+                validator = cv.All(unit_validator(), validator)
+        return validator
+
+
+@dataclass(frozen=True, slots=True)
+class Command:
+    id: int
+    name: str  # CamelCase
+    conf_key: str  # snake_case
+    # optional: bool = False
+    args: tuple[Field, ...] = ()
+    conformance: Conformance | None = field(default=None, compare=False, hash=False)
+
+    @classmethod
+    def from_dict(cls, name: str, data: dict):
+        return cls(
+            id=data["id"],
+            name=name,
+            conf_key=snake_case(name),
+            args=tuple([Field.from_dict(arg) for arg in data["args"]]),
+            conformance=Conformance.from_dict(data.get("conformance")),
+        )

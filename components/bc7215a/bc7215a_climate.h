@@ -1,4 +1,5 @@
 #pragma once
+#include "status_led.h"
 #include "esphome/core/component.h"
 #include "esphome/core/preferences.h"
 #include "esphome/components/climate/climate.h"
@@ -18,8 +19,14 @@ class UARTStream : public Stream {
   int peek() override { uint8_t c; return bus_->available() && bus_->peek_byte(&c) ? c : -1; }
   void flush() override;
   size_t write(uint8_t c) override;
-  void log_trace();
+  void log_trace(bool force = false);
   void drain_raw();
+#if defined(USE_ESP32) && defined(USE_ESP_IDF)
+  bool configure_cts(int pin);
+  bool beginPacket() override;
+  void endPacket() override;
+  bool packetBuffered() const override { return buffering_; }
+#endif
   uint32_t rx_count{0}, tx_count{0};
   uint32_t write_delta_us{0};
   bool io_error{false};
@@ -27,7 +34,13 @@ class UARTStream : public Stream {
   uart::UARTComponent *bus_;
   uint8_t rx_trace_[256]{}, tx_trace_[256]{};
   size_t rx_size_{0}, tx_size_{0};
-  uint32_t rx_dropped_{0}, tx_dropped_{0}, last_write_us_{0};
+  uint32_t rx_dropped_{0}, tx_dropped_{0}, last_write_us_{0}, last_trace_ms_{0};
+#if defined(USE_ESP32) && defined(USE_ESP_IDF)
+  int uart_num_{-1};
+  bool buffering_{false};
+  uint8_t packet_[1100]{}; // F5: 4-byte header + at most 512 stuffed data bytes.
+  size_t packet_size_{0};
+#endif
 };
 
 struct Capture {
@@ -47,26 +60,6 @@ struct PairingData {
 struct Settings {
   int temperature{25}, mode{1}, fan{0};
   bool power{false};
-  bool swing_from_remote{false};
-  int swing{-1}; // -1: remote/unknown; 0: both off; 1: vertical; 2: horizontal
-};
-
-// Separate preference: the existing PairingData layout and key remain unchanged.
-struct SwingSample {
-  uint8_t status{0};
-  bc7215DataMaxPkt_t data{};
-};
-struct SwingAxis {
-  bool ready{false};
-  SwingSample off{}, on{};
-};
-struct SwingCanonical {
-  bc7215DataMaxPkt_t data{};
-  bc7215FormatPkt_t format{};
-};
-struct SwingData {
-  uint32_t magic{0}, pairing{0};
-  SwingAxis axes[2]{};
 };
 
 class BC7215AClimate : public Component, public climate::Climate, public uart::UARTDevice {
@@ -85,13 +78,15 @@ class BC7215AClimate : public Component, public climate::Climate, public uart::U
   void set_library_version(text_sensor::TextSensor *s) { version_ = s; }
   void set_paired(binary_sensor::BinarySensor *s) { paired_ = s; }
   void set_state_known(binary_sensor::BinarySensor *s) { known_sensor_ = s; }
-  void set_vertical_swing_status(text_sensor::TextSensor *s) { vertical_swing_status_ = s; }
-  void set_horizontal_swing_status(text_sensor::TextSensor *s) { horizontal_swing_status_ = s; }
-  void set_swing_state(text_sensor::TextSensor *s) { swing_state_ = s; }
-  void start_swing_learning(bool horizontal);
-  void arm_swing_sample();
-  void cancel_swing_learning();
-  bool is_learning_swing() const;
+  void matter_set_system_mode(uint8_t mode);
+  void matter_set_power(bool on);
+  void matter_set_fan_mode(uint8_t value);
+  uint8_t matter_fan_mode() const;
+  void matter_set_target_temperature(int16_t centi);
+  uint8_t matter_system_mode() const;
+  uint8_t matter_running_mode() const;
+  uint16_t matter_running_state() const;
+  int16_t matter_target_temperature_centi() const;
   void start_pairing();
   void next_match();
   void cancel_pairing();
@@ -103,9 +98,10 @@ class BC7215AClimate : public Component, public climate::Climate, public uart::U
   void setup_environment_sensors_();
   void control(const climate::ClimateCall &call) override;
   enum Phase { PROBE, PAIR, EXTRA, LISTEN, TX_ON, TX_SETTINGS, TX_OFF, FAULT,
-               PROBE_WAKE, PROBE_TX_WAIT, UNPAIRED, LEARN_WAIT, LEARN_CAPTURE } phase_{PROBE};
+               PROBE_WAKE, PROBE_TX_WAIT, UNPAIRED } phase_{PROBE};
   void status_message_(const char *message);
   void fault_(const char *message);
+  void recover_failed_tx_(const char *message);
   void begin_probe_();
   void log_diagnostics_();
   void listen_();
@@ -125,18 +121,10 @@ class BC7215AClimate : public Component, public climate::Climate, public uart::U
   void publish_match_();
   bool count_candidates_();
   void begin_command_();
+  bool matter_command_debounce_{false};
+  uint32_t matter_command_since_{0};
   void send_settings_();
   void finish_command_();
-  void load_swing_();
-  void publish_swing_();
-  void swing_prompt_();
-  void learn_swing_received_();
-  bool replace_swing_sample_(const SwingSample &sample);
-  bool swing_available_(int mode) const;
-  bool prepare_swing_();
-  void sync_remote_swing_();
-  bool canonical_swing_(const SwingSample &sample, SwingCanonical &out);
-  bool same_swing_(const SwingCanonical &a, const SwingCanonical &b) const;
   InternalGPIOPin *mod_{nullptr}, *busy_{nullptr};
   sensor::Sensor *temperature_sensor_{nullptr}, *humidity_sensor_{nullptr};
   uint32_t rx_parse_failures_{0}, rx_parse_failure_streak_{0};
@@ -147,24 +135,15 @@ class BC7215AClimate : public Component, public climate::Climate, public uart::U
   uint32_t rx_rejected_{0};
   uint8_t rx_recovery_stage_{0}, rx_recovery_attempts_{0};
   bool rx_watch_{false};
+  uint8_t rx_recovery_result_{0};
   UARTStream *stream_{nullptr};
   BC7215 *driver_{nullptr};
   BC7215AC *ac_{nullptr};
   text_sensor::TextSensor *status_{nullptr}, *match_info_{nullptr}, *version_{nullptr};
   text_sensor::TextSensor *pairing_id_{nullptr};
   binary_sensor::BinarySensor *paired_{nullptr}, *known_sensor_{nullptr};
-  ESPPreferenceObject pref_, swing_pref_;
-  SwingData swings_{};
-  SwingAxis learning_axis_{};
-  SwingSample received_swing_{};
-  SwingCanonical canonical_rx_{}, canonical_off_{}, canonical_on_{};
-  Capture learning_capture_{}; // Member, not a large ESP32 task-stack allocation.
-  Settings learning_settings_{};
-  unsigned learning_direction_{0}, learning_step_{0};
-  uint32_t learning_since_{0};
+  ESPPreferenceObject pref_;
   bool base_needs_restore_{false};
-  text_sensor::TextSensor *vertical_swing_status_{nullptr}, *horizontal_swing_status_{nullptr};
-  text_sensor::TextSensor *swing_state_{nullptr};
   PairingData saved_{}, candidate_{};
   Settings current_{}, desired_{}, active_{};
   bool paired_ok_{false}, known_{false}, pending_{false}, explicit_off_{false};

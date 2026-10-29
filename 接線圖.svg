@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="1060" viewBox="0 0 1900 1060">
+  <defs>
+    <style>
+      .title{font:700 52px "Microsoft JhengHei","Noto Sans TC",sans-serif;fill:#102033}
+      .subtitle{font:500 25px "Microsoft JhengHei","Noto Sans TC",sans-serif;fill:#536579}
+      .head{font:700 32px "Microsoft JhengHei","Noto Sans TC",sans-serif;fill:#fff}
+      .pin{font:700 25px Consolas,"Microsoft JhengHei",sans-serif;fill:#13233a}
+      .boardpin{font:700 25px Consolas,"Microsoft JhengHei",sans-serif;fill:#f8fafc}
+      .small{font:500 21px "Microsoft JhengHei","Noto Sans TC",sans-serif;fill:#52657b}
+      .white{fill:#dbeafe}
+      .wiretext{font:700 19px "Microsoft JhengHei","Noto Sans TC",sans-serif;fill:#26374b}
+      .note{font:600 23px "Microsoft JhengHei","Noto Sans TC",sans-serif;fill:#23364a}
+      .wire{fill:none;stroke-width:8;stroke-linecap:round}
+      .port{stroke:#fff;stroke-width:4}
+    </style>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#172b43" flood-opacity=".15"/>
+    </filter>
+  </defs>
+  <rect width="1900" height="1060" fill="#f1f5f9"/>
+  <text x="950" y="80" text-anchor="middle" class="title">BC7215A 空調遙控器接線圖</text>
+  <text x="950" y="122" text-anchor="middle" class="subtitle">v1.0.33 · ESP32-C3-MINI-1 雙 Type-C · BC7215A Arduino Board V2.1 · SHT40</text>
+
+  <!-- Color-coded wiring behind the boards. -->
+  <path d="M455 345 H735" class="wire" stroke="#dc2626"/>
+  <path d="M455 415 H735" class="wire" stroke="#16a34a"/>
+  <path d="M455 485 H735" class="wire" stroke="#7c3aed"/>
+  <path d="M455 555 H735" class="wire" stroke="#2563eb"/>
+  <path d="M455 625 H735" class="wire" stroke="#ea580c"/>
+  <path d="M455 695 H735" class="wire" stroke="#1f2937"/>
+  <path d="M1225 365 H1505" class="wire" stroke="#dc2626"/>
+  <path d="M1225 445 H1505" class="wire" stroke="#0891b2"/>
+  <path d="M1225 525 H1505" class="wire" stroke="#ca8a04"/>
+  <path d="M1225 605 H1505" class="wire" stroke="#1f2937"/>
+
+  <g filter="url(#shadow)">
+    <rect x="80" y="220" width="375" height="550" rx="24" fill="#fff" stroke="#aebdca" stroke-width="3"/>
+    <path d="M104 220 H431 Q455 220 455 244 V288 H80 V244 Q80 220 104 220Z" fill="#166534"/>
+    <text x="267" y="266" text-anchor="middle" class="head">BC7215A 模組</text>
+    <text x="267" y="313" text-anchor="middle" class="small">Arduino Board V2.1</text>
+    <rect x="130" y="710" width="275" height="42" rx="12" fill="#f0fdf4"/>
+    <text x="267" y="739" text-anchor="middle" class="small">紅外線收發頭在模組上</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="735" y="200" width="490" height="615" rx="28" fill="#122137" stroke="#081427" stroke-width="5"/>
+    <rect x="820" y="224" width="320" height="95" rx="12" fill="#314155" stroke="#7790ab" stroke-width="3"/>
+    <text x="980" y="270" text-anchor="middle" class="head">ESP32-C3-MINI-1</text>
+    <text x="980" y="299" text-anchor="middle" class="small white">雙 Type-C 開發板</text>
+    <rect x="925" y="410" width="110" height="112" rx="14" fill="#f8fafc"/>
+    <circle cx="980" cy="466" r="37" fill="#0f172a" stroke="#64748b" stroke-width="4"/>
+    <text x="980" y="733" text-anchor="middle" class="small white">板載 RGB：GPIO8</text>
+    <text x="980" y="762" text-anchor="middle" class="small white">無須外接</text>
+    <rect x="825" y="782" width="125" height="62" rx="12" fill="#dbe4ee" stroke="#64748b" stroke-width="3"/>
+    <rect x="1010" y="782" width="125" height="62" rx="12" fill="#dbe4ee" stroke="#64748b" stroke-width="3"/>
+    <text x="887" y="875" text-anchor="middle" class="small">COM / UART</text>
+    <text x="1072" y="875" text-anchor="middle" class="small">原生 USB</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="1505" y="260" width="315" height="435" rx="24" fill="#fff" stroke="#aebdca" stroke-width="3"/>
+    <path d="M1529 260 H1796 Q1820 260 1820 284 V328 H1505 V284 Q1505 260 1529 260Z" fill="#0369a1"/>
+    <text x="1662" y="307" text-anchor="middle" class="head">SHT40</text>
+    <text x="1662" y="350" text-anchor="middle" class="small">I²C 溫濕度模組</text>
+    <rect x="1632" y="555" width="72" height="68" rx="8" fill="#d6d3d1" stroke="#78716c" stroke-width="3"/>
+  </g>
+
+  <!-- Ports and exact functional GPIO labels.  These positions are schematic, not board footprint coordinates. -->
+  <g>
+    <circle cx="455" cy="345" r="13" fill="#dc2626" class="port"/><text x="419" y="354" text-anchor="end" class="pin">3.3V</text>
+    <circle cx="455" cy="415" r="13" fill="#16a34a" class="port"/><text x="419" y="424" text-anchor="end" class="pin">MOD</text>
+    <circle cx="455" cy="485" r="13" fill="#7c3aed" class="port"/><text x="419" y="494" text-anchor="end" class="pin">BUSY</text>
+    <circle cx="455" cy="555" r="13" fill="#2563eb" class="port"/><text x="419" y="564" text-anchor="end" class="pin">TX</text>
+    <circle cx="455" cy="625" r="13" fill="#ea580c" class="port"/><text x="419" y="634" text-anchor="end" class="pin">RX</text>
+    <circle cx="455" cy="695" r="13" fill="#1f2937" class="port"/><text x="419" y="704" text-anchor="end" class="pin">GND</text>
+
+    <circle cx="735" cy="345" r="13" fill="#dc2626" class="port"/><text x="769" y="354" class="boardpin">3V3</text>
+    <circle cx="735" cy="415" r="13" fill="#16a34a" class="port"/><text x="769" y="424" class="boardpin">GPIO0</text>
+    <circle cx="735" cy="485" r="13" fill="#7c3aed" class="port"/><text x="769" y="494" class="boardpin">GPIO1</text>
+    <circle cx="735" cy="555" r="13" fill="#2563eb" class="port"/><text x="769" y="564" class="boardpin">GPIO2 (RX)</text>
+    <circle cx="735" cy="625" r="13" fill="#ea580c" class="port"/><text x="769" y="634" class="boardpin">GPIO3 (TX)</text>
+    <circle cx="735" cy="695" r="13" fill="#1f2937" class="port"/><text x="769" y="704" class="boardpin">GND</text>
+
+    <circle cx="1225" cy="365" r="13" fill="#dc2626" class="port"/><text x="1191" y="374" text-anchor="end" class="boardpin">3V3</text>
+    <circle cx="1225" cy="445" r="13" fill="#0891b2" class="port"/><text x="1191" y="454" text-anchor="end" class="boardpin">GPIO4 (SDA)</text>
+    <circle cx="1225" cy="525" r="13" fill="#ca8a04" class="port"/><text x="1191" y="534" text-anchor="end" class="boardpin">GPIO5 (SCL)</text>
+    <circle cx="1225" cy="605" r="13" fill="#1f2937" class="port"/><text x="1191" y="614" text-anchor="end" class="boardpin">GND</text>
+    <circle cx="1505" cy="365" r="13" fill="#dc2626" class="port"/><text x="1540" y="374" class="pin">VCC / VIN</text>
+    <circle cx="1505" cy="445" r="13" fill="#0891b2" class="port"/><text x="1540" y="454" class="pin">SDA</text>
+    <circle cx="1505" cy="525" r="13" fill="#ca8a04" class="port"/><text x="1540" y="534" class="pin">SCL</text>
+    <circle cx="1505" cy="605" r="13" fill="#1f2937" class="port"/><text x="1540" y="614" class="pin">GND</text>
+  </g>
+
+  <rect x="79" y="914" width="1742" height="104" rx="18" fill="#fff" stroke="#c7d2de" stroke-width="2"/>
+  <text x="110" y="954" class="note">供電：BC7215A 與 SHT40 都接 C3 的 3V3；所有 GND 共地。不要把模組接到 5V。</text>
+  <text x="110" y="991" class="note">BC7215A UART：19200 bps、8N2。此圖按功能標示；實際插孔位置請以開發板絲印確認。</text>
+</svg>
